@@ -1086,14 +1086,25 @@ function onProductChange() {
   // CHANGED: 商品の過去記録から最後に使った単位を自動セット
   const pid = document.getElementById('sel-product').value;
   if (!pid) return;
-  const entries = state.entries
+  const entries = [...state.entries]
     .filter(e => e.productId === pid)
     .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   if (entries.length > 0) {
     const lastUnit = entries[0].unit;
     const unitSel = document.getElementById('inp-unit');
     if (lastUnit && unitSel) {
-      unitSel.value = lastUnit;
+      // optionに存在する値かチェックしてからセット
+      const opts = Array.from(unitSel.options).map(o => o.value);
+      if (opts.includes(lastUnit)) {
+        unitSel.value = lastUnit;
+      } else {
+        // 既存optionにない単位はoptionを追加してセット
+        const opt = document.createElement('option');
+        opt.value = lastUnit;
+        opt.textContent = lastUnit;
+        unitSel.appendChild(opt);
+        unitSel.value = lastUnit;
+      }
       calcUnitPrice();
     }
   }
@@ -1467,14 +1478,18 @@ function removeMaster(type, id) {
 // EXPORT / IMPORT / CLEAR
 // ============================================================
 function exportData() {
+  // CHANGED: ファイルダウンロード方式に変更（clipboard APIの不安定さを回避）
   const json = JSON.stringify(state, null, 2);
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(json).then(() => {
-      showMsg('import-msg', 'JSONをクリップボードにコピーしました', false);
-    }).catch(() => exportFallback(json));
-  } else {
-    exportFallback(json);
-  }
+  const blob = new Blob([json], {type: 'application/json'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = 'price-memo-' + new Date().toISOString().slice(0,10) + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showMsg('import-msg', 'JSONをダウンロードしました', false);
 }
 
 function exportFallback(json) {
