@@ -9,19 +9,18 @@
 // FIREBASE CONFIG  ←★ここにご自身のconfigを貼り付けてください
 // ============================================================
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect,
-         getRedirectResult, signOut, onAuthStateChanged }
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, doc, setDoc, onSnapshot }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
-    apiKey: "AIzaSyBC4etTHM6u9GpvMAPM-VDtruVG21pDbf0",
-    authDomain: "price-memo.firebaseapp.com",
-    projectId: "price-memo",
-    storageBucket: "price-memo.firebasestorage.app",
-    messagingSenderId: "1073767743624",
-    appId: "1:1073767743624:web:4fc193eff85e1939929f3d"
+  apiKey:            "YOUR_API_KEY",
+  authDomain:        "YOUR_PROJECT.firebaseapp.com",
+  projectId:         "YOUR_PROJECT_ID",
+  storageBucket:     "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId:             "YOUR_APP_ID"
 };
 
 const app  = initializeApp(firebaseConfig);
@@ -33,14 +32,15 @@ let _unsubscribe = null; // Firestoreリスナー解除用
 // ---- グローバルに公開（非moduleスクリプトから呼べるように） ----
 window._fbLogin = async () => {
   try {
-    // モバイルはリダイレクト、PCはポップアップ
-    const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
-    if (isMobile) {
-      await signInWithRedirect(auth, new GoogleAuthProvider());
-    } else {
-      await signInWithPopup(auth, new GoogleAuthProvider());
-    }
-  } catch(e) { console.error(e); }
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    const result = await signInWithPopup(auth, provider);
+    console.log('login success:', result.user.displayName);
+  } catch(e) {
+    console.error('login error:', e);
+    const info = document.getElementById('auth-info');
+    if (info) info.textContent = 'エラー: ' + (e.code || e.message);
+  }
 };
 
 window._fbLogout = async () => {
@@ -48,19 +48,6 @@ window._fbLogout = async () => {
   await signOut(auth);
   updateAuthUI(null);
 };
-
-// ---- リダイレクト結果の処理 ----
-getRedirectResult(auth).then(result => {
-  if (result && result.user) {
-    // リダイレクトログイン成功（onAuthStateChangedが続けて処理）
-    console.log('redirect login success:', result.user.displayName);
-  }
-}).catch(e => {
-  console.error('redirect error:', e);
-  // エラー内容をUIに表示
-  const info = document.getElementById('auth-info');
-  if (info) info.textContent = 'ログインエラー: ' + (e.code || e.message);
-});
 
 // ---- 認証状態変化 ----
 onAuthStateChanged(auth, user => {
