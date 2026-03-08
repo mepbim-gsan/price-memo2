@@ -15,7 +15,7 @@
 GitHub Pages でホスティングしているため、以下のURLからアクセスできます。
 
 ```
-https://<your-username>.github.io/<repository>/price-memo.html
+https://mepbim-gsan.github.io/price-memo2/price-memo.html
 ```
 
 Googleアカウントでログインするとデータがクラウドに保存され、複数デバイス間で同期されます。未ログインの場合はブラウザのlocalStorageにのみ保存されます。
