@@ -5,84 +5,123 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>値段メモ帳</title>
 <script type="module">
-// ============================================================
-// FIREBASE CONFIG  ←★ここにご自身のconfigを貼り付けてください
-// ============================================================
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { initializeApp }   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, doc, setDoc, onSnapshot }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
-const firebaseConfig = {
-    apiKey: "AIzaSyBC4etTHM6u9GpvMAPM-VDtruVG21pDbf0",
-    authDomain: "price-memo.firebaseapp.com",
-    projectId: "price-memo",
-    storageBucket: "price-memo.firebasestorage.app",
-    messagingSenderId: "1073767743624",
-    appId: "1:1073767743624:web:4fc193eff85e1939929f3d"
+// ============================================================
+// Firebase config を localStorage から読み込んで初期化
+// ============================================================
+const CONFIG_KEY = 'firebase-config-v1';
+
+function loadConfig() {
+  try {
+    const s = localStorage.getItem(CONFIG_KEY);
+    return s ? JSON.parse(s) : null;
+  } catch { return null; }
+}
+
+// configの貼り付けテキストをパース（JSON形式 or JS形式どちらも対応）
+window._parseFirebaseConfig = function(text) {
+  if (!text || !text.trim()) return null;
+  try {
+    // JSON形式: { "apiKey": "..." }
+    return JSON.parse(text.trim());
+  } catch {}
+  try {
+    // JS形式: const firebaseConfig = { apiKey: "...", ... };
+    // キーをダブルクォートで囲んでJSONに変換
+    let s = text
+      .replace(/\/\/.*$/gm, '')           // 行コメント除去
+      .replace(/const\s+\w+\s*=\s*/g, '') // const xxx = 除去
+      .replace(/;?\s*$/, '')              // 末尾セミコロン除去
+      .trim();
+    // オブジェクト部分だけ抽出
+    const match = s.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    // キーをクォート
+    const jsonStr = match[0]
+      .replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":')
+      .replace(/'/g, '"');
+    return JSON.parse(jsonStr);
+  } catch {}
+  return null;
 };
 
-const app  = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db   = getFirestore(app);
+// config保存
+window._saveFirebaseConfig = function(cfg) {
+  localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg));
+};
 
-let _unsubscribe = null; // Firestoreリスナー解除用
+// config削除
+window._clearFirebaseConfig = function() {
+  localStorage.removeItem(CONFIG_KEY);
+};
 
-// ---- グローバルに公開（非moduleスクリプトから呼べるように） ----
-window._fbLogin = async () => {
+let auth, db, _unsubscribe = null;
+
+function initFirebase(cfg) {
+  if (!cfg || !cfg.apiKey) return false;
   try {
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: 'select_account' });
-    const result = await signInWithPopup(auth, provider);
-    console.log('login success:', result.user.displayName);
+    const app = initializeApp(cfg);
+    auth = getAuth(app);
+    db   = getFirestore(app);
+    setupAuth();
+    return true;
   } catch(e) {
-    console.error('login error:', e);
-    const info = document.getElementById('auth-info');
-    if (info) info.textContent = 'エラー: ' + (e.code || e.message);
+    console.error('Firebase init error:', e);
+    return false;
   }
-};
+}
 
-window._fbLogout = async () => {
-  if (_unsubscribe) { _unsubscribe(); _unsubscribe = null; }
-  await signOut(auth);
-  updateAuthUI(null);
-};
+function setupAuth() {
+  window._fbLogin = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      await signInWithPopup(auth, provider);
+    } catch(e) {
+      console.error('login error:', e);
+      const info = document.getElementById('auth-info');
+      if (info) info.textContent = 'エラー: ' + (e.code || e.message);
+    }
+  };
 
-// ---- 認証状態変化 ----
-onAuthStateChanged(auth, user => {
-  updateAuthUI(user);
-  if (_unsubscribe) { _unsubscribe(); _unsubscribe = null; }
-  if (user) {
-    const ref = doc(db, 'users', user.uid, 'data', 'main');
-    // 初回読み込み＋リアルタイム同期
-    _unsubscribe = onSnapshot(ref, snap => {
-      if (snap.exists()) {
-        const remote = snap.data();
-        // 外部変更時のみstateを更新（自分のsave直後は無視しない—冪等なので問題なし）
-        window._applyRemoteState(remote);
-      }
-    });
-  }
-});
+  window._fbLogout = async () => {
+    if (_unsubscribe) { _unsubscribe(); _unsubscribe = null; }
+    await signOut(auth);
+    updateAuthUI(null);
+  };
 
-// Firestoreへの書き込み（saveState()から呼ばれる）
-window._saveToFirestore = async (stateObj) => {
-  const user = auth.currentUser;
-  if (!user) return;
-  try {
-    const ref = doc(db, 'users', user.uid, 'data', 'main');
-    await setDoc(ref, stateObj);
-  } catch(e) { console.error('Firestore write error:', e); }
-};
+  window._saveToFirestore = async (stateObj) => {
+    if (!auth || !auth.currentUser) return;
+    try {
+      const ref = doc(db, 'users', auth.currentUser.uid, 'data', 'main');
+      await setDoc(ref, stateObj);
+    } catch(e) { console.error('Firestore write error:', e); }
+  };
+
+  onAuthStateChanged(auth, user => {
+    updateAuthUI(user);
+    if (_unsubscribe) { _unsubscribe(); _unsubscribe = null; }
+    if (user) {
+      const ref = doc(db, 'users', user.uid, 'data', 'main');
+      _unsubscribe = onSnapshot(ref, snap => {
+        if (snap.exists()) window._applyRemoteState(snap.data());
+      });
+    }
+  });
+}
 
 function updateAuthUI(user) {
   const btn  = document.getElementById('auth-btn');
   const info = document.getElementById('auth-info');
   if (!btn) return;
   if (user) {
-    btn.textContent  = 'ログアウト';
-    btn.onclick      = window._fbLogout;
+    btn.textContent = 'ログアウト';
+    btn.onclick     = window._fbLogout;
     info.textContent = user.displayName || user.email || '';
     info.title       = user.email || '';
   } else {
@@ -91,7 +130,81 @@ function updateAuthUI(user) {
     info.textContent = '未ログイン';
     info.title       = '';
   }
+  // 設定タブのconfig状態も更新
+  if (window._renderFirebaseConfigUI) window._renderFirebaseConfigUI();
 }
+
+// 起動時にlocalStorageからconfigを読んで初期化
+const savedConfig = loadConfig();
+if (savedConfig) {
+  initFirebase(savedConfig);
+} else {
+  // config未設定時はログインボタンを設定案内に変更
+  window.addEventListener('DOMContentLoaded', () => {
+    const btn  = document.getElementById('auth-btn');
+    const info = document.getElementById('auth-info');
+    if (btn)  { btn.textContent = 'Firebase未設定'; btn.onclick = () => switchTab('settings'); }
+    if (info) info.textContent = '設定タブでconfigを入力してください';
+  });
+}
+
+// moduleロード完了後にconfig UIを描画（初期表示対応）
+window.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    if (window._renderFirebaseConfigUI) window._renderFirebaseConfigUI();
+  }, 100);
+});
+
+// 設定タブから呼ばれるconfig保存処理
+window._applyConfigFromUI = function() {
+  const ta  = document.getElementById('firebase-config-input');
+  const msg = document.getElementById('firebase-config-msg');
+  if (!ta) return;
+  const cfg = window._parseFirebaseConfig(ta.value);
+  if (!cfg || !cfg.apiKey) {
+    msg.textContent = '❌ 解析できませんでした。形式を確認してください。';
+    msg.style.color = 'var(--accent)';
+    return;
+  }
+  window._saveFirebaseConfig(cfg);
+  const ok = initFirebase(cfg);
+  if (ok) {
+    msg.textContent = '✅ 保存しました。ページをリロードします…';
+    msg.style.color = 'var(--green)';
+    setTimeout(() => location.reload(), 1200);
+  } else {
+    msg.textContent = '❌ Firebase初期化に失敗しました。configを確認してください。';
+    msg.style.color = 'var(--accent)';
+  }
+};
+
+window._clearConfigFromUI = function() {
+  window._clearFirebaseConfig();
+  const msg = document.getElementById('firebase-config-msg');
+  if (msg) { msg.textContent = '🗑️ configを削除しました。ページをリロードします…'; msg.style.color = 'var(--ink-light)'; }
+  setTimeout(() => location.reload(), 1200);
+};
+
+window._renderFirebaseConfigUI = function() {
+  const section = document.getElementById('firebase-config-section');
+  if (!section) return;
+  const cfg = loadConfig();
+  if (cfg) {
+    section.innerHTML =
+      '<div style="font-size:13px; color:var(--green); margin-bottom:8px;">✅ Firebase config 設定済み</div>' +
+      '<div style="font-size:11px; color:var(--ink-faint); margin-bottom:12px;">projectId: ' + (cfg.projectId || '—') + '</div>' +
+      '<button class="btn btn-secondary btn-sm" onclick="window._clearConfigFromUI()">🗑️ configを削除して再設定</button>' +
+      '<div id="firebase-config-msg" style="font-size:12px; margin-top:8px;"></div>';
+  } else {
+    section.innerHTML =
+      '<div style="font-size:13px; color:var(--ink-light); margin-bottom:10px;">Firebase configを貼り付けてください。<br>' +
+      '<span style="font-size:11px; color:var(--ink-faint);">JSON形式・JSコード形式どちらも対応しています。</span></div>' +
+      '<textarea id="firebase-config-input" placeholder='// どちらの形式でも貼り付けOK&#10;&#10;// JS形式&#10;const firebaseConfig = {&#10;  apiKey: &quot;AIza...&quot;,&#10;  ...&#10;};&#10;&#10;// またはJSON形式&#10;{&#10;  &quot;apiKey&quot;: &quot;AIza...&quot;,&#10;  ...&#10;}' ' +
+      'style="width:100%; height:180px; font-size:12px; font-family:monospace; border:1px solid var(--border); border-radius:6px; padding:10px; resize:vertical; margin-bottom:8px;"></textarea>' +
+      '<button class="btn btn-primary btn-sm" onclick="window._applyConfigFromUI()">保存して初期化</button>' +
+      '<div id="firebase-config-msg" style="font-size:12px; margin-top:8px;"></div>';
+  }
+};
 </script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
@@ -913,6 +1026,12 @@ function updateAuthUI(user) {
       <button class="btn btn-secondary" onclick="clearAll()" style="color:var(--accent);">🗑️ 全データ削除</button>
     </div>
     <div class="divider"></div>
+    <div class="section-title">Firebase設定</div>
+    <div id="firebase-config-section" style="background:white; border:1px solid var(--border); border-radius:8px; padding:14px 16px;">
+      <div style="font-size:13px; color:var(--ink-faint);">読み込み中…</div>
+    </div>
+
+    <div class="divider"></div>
     <div class="section-title">クラウド同期</div>
     <div style="background:white; border:1px solid var(--border); border-radius:8px; padding:14px 16px; font-size:13px; color:var(--ink-light); line-height:1.8;">
       <div>状態：<span id="settings-auth-status" style="font-weight:500; color:var(--ink);">—</span></div>
@@ -921,8 +1040,7 @@ function updateAuthUI(user) {
         複数デバイスで同じGoogleアカウントでログインするとリアルタイム同期されます。
       </div>
     </div>
-    <div style="display:none"><!-- dummy --></div
-    </div>
+  </div>
   </div>
 </div>
 
@@ -1378,6 +1496,8 @@ function renderCompare() {
 function renderSettings() {
   renderMasterList('product-list-settings', state.products, 'product');
   renderMasterList('store-list-settings',   state.stores,   'store');
+  // Firebase config UI描画
+  if (window._renderFirebaseConfigUI) window._renderFirebaseConfigUI();
   // 同期状態表示更新
   const el = document.getElementById('settings-auth-status');
   if (el) {
@@ -1547,6 +1667,7 @@ function switchTab(name) {
   document.querySelectorAll('.content').forEach(c => c.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   if (name === 'compare') renderCompare();
+  if (name === 'settings') renderSettings();
 }
 
 // ============================================================
