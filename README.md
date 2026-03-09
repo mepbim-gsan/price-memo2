@@ -20,6 +20,10 @@ https://mepbim-gsan.github.io/price-memo2/price-memo.html
 
 Googleアカウントでログインするとデータがクラウドに保存され、複数デバイス間で同期されます。未ログインの場合はブラウザのlocalStorageにのみ保存されます。
 
+### Firebase configの初期設定
+
+初回アクセス時、設定タブ →「Firebase configを入力」からFirebase ConsoleのconfigをそのままペーストしてOKです。JS形式・JSON形式どちらも対応しています。configはブラウザのlocalStorageに保存されるため、HTMLファイルに直接記述する必要はありません。
+
 ## セットアップ（開発者向け）
 
 ### 必要なもの
@@ -46,22 +50,11 @@ service cloud.firestore {
 }
 ```
 
-5. Authentication → 承認済みドメイン に `<your-username>.github.io` を追加
+5. Authentication → 承認済みドメイン に `mepbim-gsan.github.io` を追加
 
-### config の書き換え
+### Firebase configの設定
 
-`price-memo.html` 冒頭の `firebaseConfig` にFirebase ConsoleのWeb appのconfigを貼り付けてください。
-
-```js
-const firebaseConfig = {
-  apiKey:            "YOUR_API_KEY",
-  authDomain:        "YOUR_PROJECT.firebaseapp.com",
-  projectId:         "YOUR_PROJECT_ID",
-  storageBucket:     "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId:             "YOUR_APP_ID"
-};
-```
+HTMLファイルへの直接記述は不要です。アプリを開いて設定タブからconfigを入力してください。
 
 ## 技術スタック
 
