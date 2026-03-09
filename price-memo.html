@@ -148,12 +148,8 @@ if (savedConfig) {
   });
 }
 
-// moduleロード完了後にconfig UIを描画（初期表示対応）
-window.addEventListener('DOMContentLoaded', () => {
-  setTimeout(() => {
-    if (window._renderFirebaseConfigUI) window._renderFirebaseConfigUI();
-  }, 100);
-});
+// moduleロード完了を通知するフラグ
+window._firebaseModuleReady = true;
 
 // 設定タブから呼ばれるconfig保存処理
 window._applyConfigFromUI = function() {
@@ -191,19 +187,73 @@ window._renderFirebaseConfigUI = function() {
   const cfg = loadConfig();
   if (cfg) {
     section.innerHTML =
-      '<div style="font-size:13px; color:var(--green); margin-bottom:8px;">✅ Firebase config 設定済み</div>' +
-      '<div style="font-size:11px; color:var(--ink-faint); margin-bottom:12px;">projectId: ' + (cfg.projectId || '—') + '</div>' +
-      '<button class="btn btn-secondary btn-sm" onclick="window._clearConfigFromUI()">🗑️ configを削除して再設定</button>' +
+      '<div style="font-size:13px; color:var(--green); margin-bottom:8px;">\u2705 Firebase config \u8a2d\u5b9a\u6e08\u307f</div>' +
+      '<div style="font-size:11px; color:var(--ink-faint); margin-bottom:12px;">projectId: ' + (cfg.projectId || '\u2014') + '</div>' +
+      '<button class="btn btn-secondary btn-sm" onclick="window._clearConfigFromUI()">' +
+        '\ud83d\uddd1\ufe0f config\u3092\u524a\u9664\u3057\u3066\u518d\u8a2d\u5b9a</button>' +
       '<div id="firebase-config-msg" style="font-size:12px; margin-top:8px;"></div>';
   } else {
     section.innerHTML =
-      '<div style="font-size:13px; color:var(--ink-light); margin-bottom:10px;">Firebase configを貼り付けてください。<br>' +
-      '<span style="font-size:11px; color:var(--ink-faint);">JSON形式・JSコード形式どちらも対応しています。</span></div>' +
-      '<textarea id="firebase-config-input" placeholder='// どちらの形式でも貼り付けOK&#10;&#10;// JS形式&#10;const firebaseConfig = {&#10;  apiKey: &quot;AIza...&quot;,&#10;  ...&#10;};&#10;&#10;// またはJSON形式&#10;{&#10;  &quot;apiKey&quot;: &quot;AIza...&quot;,&#10;  ...&#10;}' ' +
-      'style="width:100%; height:180px; font-size:12px; font-family:monospace; border:1px solid var(--border); border-radius:6px; padding:10px; resize:vertical; margin-bottom:8px;"></textarea>' +
-      '<button class="btn btn-primary btn-sm" onclick="window._applyConfigFromUI()">保存して初期化</button>' +
+      '<div style="font-size:13px; color:var(--ink-light); margin-bottom:10px;">' +
+        'Firebase config\u3092\u8a2d\u5b9a\u3057\u3066\u304f\u3060\u3055\u3044</div>' +
+      '<button class="btn btn-primary" onclick="window._showConfigPopup()">' +
+        '\u2699\ufe0f Firebase config\u3092\u5165\u529b</button>' +
       '<div id="firebase-config-msg" style="font-size:12px; margin-top:8px;"></div>';
   }
+};
+
+window._showConfigPopup = function() {
+  const existing = document.getElementById('firebase-config-popup');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'firebase-config-popup';
+  overlay.style.cssText =
+    'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);' +
+    'z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+
+  overlay.innerHTML =
+    '<div style="background:white;border-radius:12px;padding:20px;width:100%;max-width:480px;' +
+      'box-shadow:0 8px 32px rgba(0,0,0,0.3);max-height:90vh;overflow-y:auto;">' +
+      '<div style="font-size:16px;font-weight:700;color:var(--ink);margin-bottom:6px;">Firebase config\u306e\u5165\u529b</div>' +
+      '<div style="font-size:12px;color:var(--ink-faint);margin-bottom:12px;">' +
+        'Firebase\u30b3\u30f3\u30bd\u30fc\u30eb\u304b\u3089\u30b3\u30d4\u30fc\u3057\u305f\u30b3\u30fc\u30c9\u3092\u305d\u306e\u307e\u307e\u8cbc\u308a\u4ed8\u3051\u3066\u304f\u3060\u3055\u3044\u3002<br>' +
+        'JSON\u5f62\u5f0f\u30fbJS\u30b3\u30fc\u30c9\u5f62\u5f0f\u3069\u3061\u3089\u3082OK\u3067\u3059\u3002</div>' +
+      '<textarea id="fb-cfg-ta" style="width:100%;height:200px;font-size:12px;font-family:monospace;' +
+        'border:1px solid var(--border);border-radius:6px;padding:10px;resize:vertical;' +
+        'box-sizing:border-box;margin-bottom:12px;" ' +
+        'placeholder="const firebaseConfig = {\n  apiKey: \"AIza...\",\n  authDomain: \"...\",\n  ...\n};"></textarea>' +
+      '<div style="display:flex;gap:10px;justify-content:flex-end;">' +
+        '<button onclick="document.getElementById(&quot;firebase-config-popup&quot;).remove()" ' +
+          'style="padding:10px 18px;border:1px solid var(--border);border-radius:6px;' +
+          'background:white;cursor:pointer;font-size:14px;">キャンセル</button>' +
+        '<button onclick="window._applyConfigFromPopup()" ' +
+          'style="padding:10px 18px;border:none;border-radius:6px;' +
+          'background:var(--accent);color:white;cursor:pointer;font-size:14px;font-weight:500;">' +
+          '保存して初期化</button>' +
+      '</div>' +
+      '<div id="fb-cfg-msg" style="font-size:12px;margin-top:8px;text-align:center;"></div>' +
+    '</div>';
+
+  document.body.appendChild(overlay);
+  setTimeout(() => {
+    const ta = document.getElementById('fb-cfg-ta');
+    if (ta) ta.focus();
+  }, 150);
+};
+
+window._applyConfigFromPopup = function() {
+  const ta  = document.getElementById('fb-cfg-ta');
+  const msg = document.getElementById('fb-cfg-msg');
+  if (!ta) return;
+  const cfg = window._parseFirebaseConfig(ta.value);
+  if (!cfg || !cfg.apiKey) {
+    if (msg) { msg.textContent = '❌ 解析できませんでした。形式を確認してください。'; msg.style.color = 'var(--accent)'; }
+    return;
+  }
+  window._saveFirebaseConfig(cfg);
+  if (msg) { msg.textContent = '✅ 保存しました。ページをリロードします…'; msg.style.color = 'var(--green)'; }
+  setTimeout(() => location.reload(), 1200);
 };
 </script>
 <style>
@@ -1496,8 +1546,15 @@ function renderCompare() {
 function renderSettings() {
   renderMasterList('product-list-settings', state.products, 'product');
   renderMasterList('store-list-settings',   state.stores,   'store');
-  // Firebase config UI描画
-  if (window._renderFirebaseConfigUI) window._renderFirebaseConfigUI();
+  // Firebase config UI描画（moduleロード待ち）
+  const _tryRender = (n) => {
+    if (window._renderFirebaseConfigUI) {
+      window._renderFirebaseConfigUI();
+    } else if (n > 0) {
+      setTimeout(() => _tryRender(n - 1), 200);
+    }
+  };
+  _tryRender(20); // 最大4秒待つ
   // 同期状態表示更新
   const el = document.getElementById('settings-auth-status');
   if (el) {
